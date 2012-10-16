@@ -1,0 +1,7 @@
+; $Id$
+name = Airport Security
+description = Adds a password protection field to nodes. Questions?
+core = 7.x
+php = 5.1
+version = 7.x - 10.0
+files[] = wfm_password_protection.module

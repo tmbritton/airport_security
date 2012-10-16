@@ -1,0 +1,128 @@
+<?php
+/**
+ * Implements hook_form_FORM_ID_alter().
+ *
+ * Inserts a "password protected" field into the vertical tabs on node edit screens
+ */
+function airport_security_form_node_form_alter(&$form, $form_state) {
+  $node = menu_get_object();
+  $nid = $node->nid;
+  
+  $form['password_protection'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Airport Security'),
+    '#description' => t('Password Protect this Node.'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#group' => 'additional_settings',
+    '#access' => user_access('administer nodes')
+  );
+  
+  $form['password_protection']['password'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Enter Password'),
+    '#description' => t('Enter a password for this node. Leave blank if no password protection is desired.'),
+    '#default_value' => variable_get('password_protection_' . $nid)
+  );
+}
+
+/**
+ * Implements hook_node_submit().
+ *
+ * Saves data in the password protected field created using variable_set() with 'password_protection_' . $node->id as the key
+ */
+function airport_security_node_submit($node, $form, &$form_state) {
+  $name = 'password_protection_' . $node->nid;
+  $value = $form['password_protection']['password']['#value'];
+  $existing = variable_get($name);
+
+  if ($value == '' && !is_null($existing)) {
+    variable_del($name);
+    return;
+  }
+  if ($value == $existing) {
+    return;
+  } 
+  else {
+    variable_set($name, $value);
+    return;
+  }
+}
+
+/**
+ * Implements hook_page_alter().
+ *
+ * Checks to see if password protection variable is set for node, checks for 
+ * access, displays Authentication form if access is not granted.
+ */
+function airport_security_page_alter(&$page) {
+  $node = menu_get_object();
+  //check to see if we're not in admin and on a node
+  if (!isset($page['content']['system_main']['#node_edit_form']) && $node) {
+    $pword = FALSE;
+    $name = 'password_protection_' . $node->nid;
+    if (variable_get($name) != FALSE) {
+      $pword = variable_get($name);
+      //Checking referrer because $_SESSION is cached for anonymous users
+      //Authentication form posts to page it exists on so referrer will always 
+      //be the current page.
+      $paths = array();
+      $paths[] = 'http://' . $_SERVER['SERVER_NAME'] . '/node/' . $node->nid;
+      if (drupal_lookup_path('alias', 'node/' . $node->nid)) {
+        $paths[] = drupal_lookup_path('alias', 'node/' . $node->nid);
+      }
+      
+      if (!in_array($_SERVER['HTTP_REFERER'], $paths)) {
+        $_SESSION[$name] = 0;
+      }
+    
+      if ($pword && $_SESSION[$name] != 1) {
+        $form = drupal_get_form('airport_security_password_protect_password_entry_form');
+        $markup = '<h2>' . t('Authentication Required') . '</h2>';
+        $markup .= drupal_render($form);
+        $page['content']['#markup'] = $markup; 
+      }
+    }  
+  }
+}
+
+/**
+ * Form function for Authentication form.
+ * @see airport_security_password_protect_form_submit_handler()
+ */
+function airport_security_password_protect_password_entry_form($form_state) {
+  //$form['#tree'] = TRUE;
+  $form['airport_security_password_protected_entry'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Please enter the password to access this page.'),
+    '#tree' => TRUE,
+  );
+  $form['airport_security_password_protected_entry']['password'] = array(
+    '#type' => 'password',
+    '#title' => t('Password'),
+    '#size' => 30,
+    '#maxlength' => 64,
+    '#description' => t('Enter the password to view this page.'),
+  );
+  $form['submit'] = array('#type' => 'submit', '#value' => t('Enter!'));
+  $form['#submit'][] = 'airport_security_password_protect_form_submit_handler';
+  
+  return $form;
+}
+
+/**
+ * submit handler for airport_security_password_protect_password_entry_form()
+ * @see airport_security_password_protect_password_entry_form()
+ */
+function airport_security_password_protect_form_submit_handler() {
+  $node = menu_get_object();
+  $name = 'password_protection_' . $node->nid;
+  $entered = $_POST['airport_security_password_protected_entry']['password'];
+  $pword = variable_get($name);
+  if ($pword == $entered) {
+    $_SESSION[$name] = 1;
+  } 
+  else {
+    drupal_set_message(t('There was an error with the password, please enter again.'), 'error');
+  }
+}
